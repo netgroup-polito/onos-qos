@@ -70,4 +70,5 @@ public interface OvsdbRpc {
     ListenableFuture<List<JsonNode>> transact(DatabaseSchema dbSchema,
                                               List<Operation> operations);
 
+
 }

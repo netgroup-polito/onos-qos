@@ -173,6 +173,7 @@ public class DefaultDriver implements Driver {
     public <T extends Behaviour> T createBehaviour(DriverHandler handler,
                                                    Class<T> behaviourClass) {
         T behaviour = createBehaviour(handler.data(), handler, behaviourClass);
+
         if (behaviour != null) {
             return behaviour;
         } else if (parents != null && !parents.isEmpty()) {

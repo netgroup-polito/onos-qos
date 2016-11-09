@@ -15,42 +15,33 @@
  */
 package org.onosproject.net.behaviour;
 
-import com.google.common.primitives.UnsignedInteger;
+import org.onosproject.net.driver.HandlerBehaviour;
 
-import java.util.Set;
+import java.util.List;
+
 
 /**
  * Means to alter a device's dataplane queues.
  */
-public interface QueueConfig {
+public interface QueueConfig extends HandlerBehaviour {
 
-    /**
-     * Obtain all queues configured on a device.
-     *
-     * @return a list of queue descriptions
-     */
-    Set<QueueInfo> getQueues();
+    boolean addQosProfile(QosProfileDescription qosProfileDesc);
 
-    /**
-     * Obtain a specific queue given a queue id.
-     *
-     * @param queueId an unsigned integer representing a queue id
-     * @return a queue description
-     */
-    QueueInfo getQueue(UnsignedInteger queueId);
+    boolean removeQosProfile(String qosProfileName);
 
-    /**
-     * Add a queue to a device.
-     *
-     * @param queue a queue description
-     */
-    void addQueue(QueueInfo queue);
+    List<QosProfileDescription> getQosProfiles();
 
-    /**
-     * Remove a queue from a device.
-     *
-     * @param queueId an unsigned integer
-     */
-    void removeQueue(UnsignedInteger queueId);
+    boolean addQueueProfile(String qosProfileName, QueueProfileDescription queueProfileDescr);
+
+    boolean removeQueueProfile(String queueName);
+
+    List<QueueProfileDescription> getQueueProfile();
+    List<QueueProfileDescription> getQueueProfile(QosProfileDescription qosProfileDesc);
+
+    boolean setQosProfile(String ifaceName, String qosProfileName);
+
+    boolean clearQosProfile(String ifaceName);
+
+    long getOfQueue(String qosProfileName, String queueProfileName);
 
 }

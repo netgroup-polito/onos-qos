@@ -67,6 +67,9 @@ public final class Update implements Operation {
     private void generateOperationRow(Row row) {
         Collection<Column> columns = row.getColumns();
         for (Column column : columns) {
+            //Immutable Bug
+            if (row.tableName() == "Port" && column.columnName() == "name") continue;
+
             String columnName = column.columnName();
             Object value = column.data();
             Object formatValue = TransValueUtil.getFormatData(value);

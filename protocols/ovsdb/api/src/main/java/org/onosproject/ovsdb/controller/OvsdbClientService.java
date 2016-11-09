@@ -313,4 +313,26 @@ public interface OvsdbClientService extends OvsdbRpc {
      * Disconnects the OVSDB server.
      */
     void disconnect();
+
+    //TODO
+    boolean createQosProfile(OvsdbQosProfile ovsdbQosProfile);
+
+    boolean removeQosProfile(String qosProfileName);
+
+    Set<OvsdbQosProfile> getQosProfiles();
+
+    boolean createQueueProfile(String qosProfileName, OvsdbQueueProfile ovsdbQosProfile);
+
+    boolean removeQueueProfile(String queueName);
+
+    boolean setQueueProfile(String ifaceName, String qosProfileName);
+
+    boolean clearQosProfile(String ifaceName);
+
+    Set<OvsdbQueueProfile> getQueueProfiles();
+    Set<OvsdbQueueProfile> getQueueProfiles(String qosProfileName);
+
+    OvsdbQosProfile getQosProfile(String ifaceName);
+
+    long getOfQueue(String qosProfileName, String queueProfileName);
 }

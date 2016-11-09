@@ -30,6 +30,8 @@ import org.onosproject.ovsdb.controller.OvsdbInterface;
 import org.onosproject.ovsdb.controller.OvsdbMirror;
 import org.onosproject.ovsdb.controller.OvsdbNodeId;
 import org.onosproject.ovsdb.controller.OvsdbPort;
+import org.onosproject.ovsdb.controller.OvsdbQosProfile;
+import org.onosproject.ovsdb.controller.OvsdbQueueProfile;
 import org.onosproject.ovsdb.rfc.message.TableUpdates;
 import org.onosproject.ovsdb.rfc.notation.Row;
 import org.onosproject.ovsdb.rfc.operations.Operation;
@@ -222,6 +224,61 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
     @Override
     public void disconnect() {
 
+    }
+
+    @Override
+    public boolean createQosProfile(OvsdbQosProfile ovsdbQosProfile) {
+        return true;
+    }
+
+    @Override
+    public boolean removeQosProfile(String qosProfileName) {
+        return true;
+    }
+
+    @Override
+    public Set<OvsdbQosProfile> getQosProfiles() {
+        return null;
+    }
+
+    @Override
+    public boolean createQueueProfile(String qosProfileName, OvsdbQueueProfile ovsdbQosProfile) {
+        return true;
+    }
+
+    @Override
+    public boolean removeQueueProfile(String queueName) {
+        return true;
+    }
+
+    @Override
+    public boolean setQueueProfile(String ifaceName, String qosProfileName) {
+        return true;
+    }
+
+    @Override
+    public boolean clearQosProfile(String ifaceName) {
+        return true;
+    }
+
+    @Override
+    public Set<OvsdbQueueProfile> getQueueProfiles() {
+        return null;
+    }
+
+    @Override
+    public Set<OvsdbQueueProfile> getQueueProfiles(String qosProfileName) {
+        return null;
+    }
+
+    @Override
+    public OvsdbQosProfile getQosProfile(String ifaceName) {
+        return null;
+    }
+
+    @Override
+    public long getOfQueue(String qosProfileName, String queueProfileName) {
+        return 0;
     }
 
     @Override

@@ -32,8 +32,12 @@ import org.onlab.packet.IpAddress;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.behaviour.BridgeDescription;
 import org.onosproject.net.behaviour.ControllerInfo;
+import org.onosproject.net.behaviour.DefaultQosProfileDescription;
+import org.onosproject.net.behaviour.DefaultQueueProfileDescription;
 import org.onosproject.net.behaviour.MirroringStatistics;
 import org.onosproject.net.behaviour.MirroringName;
+import org.onosproject.net.behaviour.QosProfileDescription;
+import org.onosproject.net.behaviour.QueueProfileDescription;
 import org.onosproject.ovsdb.controller.OvsdbBridge;
 import org.onosproject.ovsdb.controller.OvsdbClientService;
 import org.onosproject.ovsdb.controller.OvsdbInterface;
@@ -43,6 +47,8 @@ import org.onosproject.ovsdb.controller.OvsdbNodeId;
 import org.onosproject.ovsdb.controller.OvsdbPort;
 import org.onosproject.ovsdb.controller.OvsdbPortName;
 import org.onosproject.ovsdb.controller.OvsdbPortNumber;
+import org.onosproject.ovsdb.controller.OvsdbQosProfile;
+import org.onosproject.ovsdb.controller.OvsdbQueueProfile;
 import org.onosproject.ovsdb.controller.OvsdbRowStore;
 import org.onosproject.ovsdb.controller.OvsdbStore;
 import org.onosproject.ovsdb.controller.OvsdbTableStore;
@@ -70,6 +76,8 @@ import org.onosproject.ovsdb.rfc.table.Interface;
 import org.onosproject.ovsdb.rfc.table.Mirror;
 import org.onosproject.ovsdb.rfc.table.OvsdbTable;
 import org.onosproject.ovsdb.rfc.table.Port;
+import org.onosproject.ovsdb.rfc.table.Qos;
+import org.onosproject.ovsdb.rfc.table.Queue;
 import org.onosproject.ovsdb.rfc.table.TableGenerator;
 import org.onosproject.ovsdb.rfc.utils.ConditionUtil;
 import org.onosproject.ovsdb.rfc.utils.FromJsonUtil;
@@ -81,6 +89,7 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -887,7 +896,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
      * @param uuid       uuid
      * @param row        the config data
      */
-    private void updateConfig(String tableName, String columnName, String uuid,
+    private ListenableFuture<List<OperationResult>> updateConfig(String tableName, String columnName, String uuid,
                               Row row) {
         DatabaseSchema dbSchema = schema.get(DATABASENAME);
         TableSchema tableSchema = dbSchema.getTableSchema(tableName);
@@ -901,7 +910,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
         ArrayList<Operation> operations = Lists.newArrayList();
         operations.add(update);
 
-        transactConfig(DATABASENAME, operations);
+        return transactConfig(DATABASENAME, operations);
     }
 
     /**
@@ -1414,5 +1423,717 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
     public void disconnect() {
         channel.disconnect();
         this.agent.removeConnectedNode(nodeId);
+    }
+
+    @Override
+    public boolean createQosProfile(OvsdbQosProfile ovsdbQosProfile) {
+        //FIXME need transaction
+        if (getQosProfileUuid(ovsdbQosProfile.name()) != null) {
+            log.error("Unable to create QoS profile with name " + ovsdbQosProfile.name() + " : already exist");
+            return false;
+        }
+        ArrayList<Operation> operations = Lists.newArrayList();
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+
+        // insert a new port with the interface name
+        Qos qos = (Qos) TableGenerator.createTable(dbSchema, OvsdbTable.QOS);
+
+        Map<String, String> externalIds = new HashMap<>();
+        Map<String, String> otherConfigs = new HashMap<>();
+        Map<Long, Uuid> queues = new HashMap<>();
+
+        if (ovsdbQosProfile.minRate().isPresent()) {
+            otherConfigs.put("min-rate", ovsdbQosProfile.minRate().get().toString());
+        }
+        if (ovsdbQosProfile.maxRate().isPresent()) {
+            otherConfigs.put("max-rate", ovsdbQosProfile.maxRate().get().toString());
+        }
+
+        externalIds.put("qos-name", ovsdbQosProfile.name());
+
+        qos.setOtherConfig(otherConfigs);
+        qos.setExternalIds(externalIds);
+        qos.setQueues(queues);
+
+        qos.setType(new HashSet<String>() { { add(ovsdbQosProfile.typeToString()); } });
+
+        Insert qosInsert = new Insert(dbSchema.getTableSchema(QOS), QOS, qos.getRow());
+        operations.add(qosInsert);
+        ListenableFuture<List<OperationResult>> tcfg = transactConfig(DATABASENAME, operations);
+
+        if (tcfg == null) {
+            log.error("Unable to create QoS profile with name " + ovsdbQosProfile.name()
+                              + ": error during transconfig");
+            return false;
+        }
+
+        try {
+            for (OperationResult ret : tcfg.get()) {
+                if (ret.getError() != null) {
+                    log.error("Unable to create QoS profile with name " + ovsdbQosProfile.name() +
+                                      ": error during transconfig (" + ret.getError() +
+                                      " -> " + ret.getDetails() + ")");
+                    return false;
+                }
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            log.error("Unable to create QoS profile with name " + ovsdbQosProfile.name() +
+                                                        "InterruptException :" + e.getMessage() +
+                                                        "StackTrace :" + e.getStackTrace());
+            return false;
+        } catch (ExecutionException e) {
+            log.error("Unable to create QoS profile with name " + ovsdbQosProfile.name() +
+                              "ExecutionException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        }
+
+        log.info("Created QosProfile {}", ovsdbQosProfile);
+        return true;
+    }
+
+    @Override
+    public boolean removeQosProfile(String qosProfileName) {
+        //TODO
+        return false;
+    }
+
+    @Override
+    public Set<OvsdbQosProfile> getQosProfiles() {
+        OvsdbRowStore rowStoreQos = getRowStore(DATABASENAME, QOS);
+        if (rowStoreQos == null) {
+            log.debug("Unable to get RowStore (getQosProfiles)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> qosTableRows = rowStoreQos.getRowStore();
+        if (qosTableRows == null) {
+            log.debug("Unable to get qosTableRows (getQosProfiles)");
+            return null;
+        }
+
+        HashSet<OvsdbQosProfile> retSet = new HashSet<>();
+        for (Row row : qosTableRows.values()) {
+            OvsdbQosProfile profile = getQosProfile(row.uuid());
+
+            if (profile != null) {
+                retSet.add(profile);
+            } else {
+                log.warn("Unable to get OvsdbQosProfile with UUID = " + row.uuid());
+            }
+        }
+        return retSet;
+    }
+
+    private OvsdbQosProfile getQosProfile(Uuid qosProfileUuid) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+
+        OvsdbRowStore rowStoreQos = getRowStore(DATABASENAME, QOS);
+        if (rowStoreQos == null) {
+            log.debug("Unable to get RowStore (getQosProfile)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> qosTableRows = rowStoreQos.getRowStore();
+        if (qosTableRows == null) {
+            log.debug("Unable to get qosTableRows (getQosProfile)");
+            return null;
+        }
+
+        Qos qos = (Qos) TableGenerator
+                .getTable(dbSchema, qosTableRows.get(qosProfileUuid), OvsdbTable.QOS);
+
+        OvsdbMap qosExternalIds = (OvsdbMap) qos.getExternalIdsColumn().data();
+        OvsdbMap qosQtherConfigs = (OvsdbMap) qos.getOtherConfigColumn().data();
+        Map<String, String> qExternalIdsMap = qosExternalIds.map();
+        Map<String, String> qOtherConfigsMap = qosQtherConfigs.map();
+
+        String name = "";
+        QosProfileDescription.Type type;
+        Optional<Long> minRate = Optional.empty();
+        Optional<Long> maxRate = Optional.empty();
+
+        if (qExternalIdsMap.get("queue-name") != null) {
+            name = qExternalIdsMap.get("queue-name");
+        }
+
+        type = QosProfileDescription.Type.valueOf((String) qos.getTypeColumn().data());
+
+        if (qOtherConfigsMap.get("min-rate") != null) {
+            minRate = Optional.of(new Long(qOtherConfigsMap.get("min-rate")));
+        }
+        if (qOtherConfigsMap.get("max-rate") != null) {
+            minRate = Optional.of(new Long(qOtherConfigsMap.get("max-rate")));
+        }
+        return OvsdbQosProfile.builder(
+                new DefaultQosProfileDescription(name, type, minRate, maxRate))
+                .build();
+    }
+
+    @Override
+    public boolean createQueueProfile(String qosProfileName, OvsdbQueueProfile ovsdbQueueProfile) {
+        //FIXME need transaction
+        if (getQueueProfileUuid(ovsdbQueueProfile.name()) != null) {
+            log.error("Unable to create Queue profile with name " + ovsdbQueueProfile.name() + " : already exist");
+            return false;
+        }
+
+        Uuid qosProfileUuid = getQosProfileUuid(qosProfileName);
+
+        if (qosProfileUuid == null) {
+            log.error("Unable to find qos profile with name " + qosProfileName);
+            return false;
+        }
+
+        ArrayList<Operation> operations = Lists.newArrayList();
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+
+        // insert a new port with the interface name
+        Queue queue = (Queue) TableGenerator.createTable(dbSchema, OvsdbTable.QUEUE);
+
+        Map<String, String> externalIds = new HashMap<>();
+        Map<String, String> otherConfigs = new HashMap<>();
+
+        if (ovsdbQueueProfile.minRate().isPresent()) {
+            otherConfigs.put("min-rate", ovsdbQueueProfile.minRate().get().toString());
+        }
+        if (ovsdbQueueProfile.maxRate().isPresent()) {
+            otherConfigs.put("max-rate", ovsdbQueueProfile.maxRate().get().toString());
+        }
+        if (ovsdbQueueProfile.priority().isPresent()) {
+            otherConfigs.put("priority", ovsdbQueueProfile.priority().get().toString());
+        }
+        if (ovsdbQueueProfile.burst().isPresent()) {
+            otherConfigs.put("burst", ovsdbQueueProfile.burst().get().toString());
+        }
+
+        externalIds.put("queue-name", ovsdbQueueProfile.name());
+
+        queue.setOtherConfig(otherConfigs);
+        queue.setExternalIds((externalIds));
+
+        Insert queueInsert = new Insert(dbSchema.getTableSchema(QUEUE), QUEUE, queue.getRow());
+        operations.add(queueInsert);
+        ListenableFuture<List<OperationResult>> tcfg = transactConfig(DATABASENAME, operations);
+
+        if (tcfg == null) {
+            log.error("Unable to create Queue profile with name " + ovsdbQueueProfile.name()
+                              + ": error during transconfig");
+            return false;
+        }
+
+        Uuid queueProfileUuid = null;
+        try {
+            for (OperationResult ret : tcfg.get()) {
+                if (ret.getError() != null) {
+                    log.error("Unable to create Queue profile with name " + ovsdbQueueProfile.name() +
+                                      ": error during transconfig (" + ret.getError() +
+                                      " -> " + ret.getDetails() + ")");
+                    return false;
+                } else {
+                    queueProfileUuid = ret.getUuid();
+                }
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            log.error("Unable to create Queue profile with name " + ovsdbQueueProfile.name() +
+                              "InterruptException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        } catch (ExecutionException e) {
+            log.error("Unable to create Queue profile with name " + ovsdbQueueProfile.name() +
+                              "ExecutionException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        }
+
+        log.info("Created QueueProfile {}", ovsdbQueueProfile);
+
+        if (queueProfileUuid == null) {
+            log.error("Unable to find recently created queue with name :" + ovsdbQueueProfile.name());
+            return false;
+        }
+
+        OvsdbRowStore rowStore = getRowStore(DATABASENAME, QOS);
+        if (rowStore == null) {
+            log.debug("There is no QoS table");
+            return false;
+        }
+
+        Row qosRow = rowStore.getRow(qosProfileUuid.value());
+        Qos qos = (Qos) TableGenerator.getTable(dbSchema, qosRow, OvsdbTable.QOS);
+        Map<Long, Uuid> queuesRet;
+        //FIXME BUG? If .data() return an HashMap -> queues empty
+        if (qos.getQueuesColumn().data() instanceof HashMap) {
+            queuesRet = new HashMap<>();
+        } else {
+            OvsdbMap ovsdbmap = (OvsdbMap) qos.getQueuesColumn().data();
+            queuesRet = ovsdbmap.map();
+        }
+
+        if (queuesRet.isEmpty()) {
+            queuesRet.put(0L, queueProfileUuid);
+        } else {
+            Long keyMax = 0L;
+            //FIXME Integer or Long ?!?!?!
+            for (Object o : queuesRet.keySet()) {
+                Long key;
+                if (o instanceof Integer) {
+                    key = new Long((Integer) o);
+                } else if (o instanceof Long) {
+                    key = (Long) o;
+                } else {
+                    log.error("Wrong key class inside QoS queues : " + o.getClass().toString());
+                    continue;
+                }
+                if (key > keyMax) {
+                    keyMax = key;
+                }
+            }
+            keyMax++;
+            queuesRet.put(keyMax, queueProfileUuid);
+        }
+        qos.setQueues(queuesRet);
+
+        ListenableFuture<List<OperationResult>> upcfg = updateConfig(QOS, UUID, qosProfileUuid.value(), qos.getRow());
+        if (upcfg == null) {
+            log.error("Unable to link Queue profile with name " + ovsdbQueueProfile.name() +
+                              ": error during transconfig");
+            return false;
+        }
+
+        try {
+            for (OperationResult ret : upcfg.get()) {
+                if (ret.getError() != null) {
+                    log.error("Unable to link Queue profile with name " + ovsdbQueueProfile.name() +
+                                      ": error during updateconfig (" + ret.getError() +
+                                      " -> " + ret.getDetails() + ")");
+                    return false;
+                }
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            log.error("Unable to link Queue profile with name " + ovsdbQueueProfile.name() +
+                              "InterruptException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        } catch (ExecutionException e) {
+            log.error("Unable to link Queue profile with name " + ovsdbQueueProfile.name() +
+                              "ExecutionException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        }
+        log.info("Correctly linked QueueProfile " + ovsdbQueueProfile.name() + " with QosProfile " + qosProfileName);
+
+        return true;
+    }
+
+    @Override
+    public boolean removeQueueProfile(String queueName) {
+        //TODO
+        return false;
+    }
+
+    @Override
+    public boolean setQueueProfile(String ifaceName, String qosProfileName) {
+        Uuid qosProfileUuid = getQosProfileUuid(qosProfileName);
+        if (qosProfileUuid == null) {
+            log.error("Unable to find QoS profile with name " + qosProfileName);
+            return false;
+        }
+
+        Set<Uuid> ar = new HashSet<>();
+        ar.add(qosProfileUuid);
+        return setPortQosUuid(ifaceName, ar);
+    }
+
+    private boolean setPortQosUuid(String ifaceName, Set<Uuid> setUuid) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+
+        OvsdbRowStore rowStorePort = getRowStore(DATABASENAME, PORT);
+        if (rowStorePort == null) {
+            log.warn("Failed to get PORT table");
+            return false;
+        }
+
+        OvsdbRowStore rowStoreBridge = getRowStore(DATABASENAME, BRIDGE);
+        if (rowStoreBridge == null) {
+            log.warn("Failed to get BRIDGE table");
+            return false;
+        }
+
+        ConcurrentMap<String, Row> bridgeTableRows = rowStoreBridge.getRowStore();
+        if (bridgeTableRows == null) {
+            log.warn("Failed to get BRIDGE table rows");
+            return false;
+        }
+
+        // interface name is unique
+        Optional<String> bridgeId = bridgeTableRows.keySet().stream()
+                .filter(uuid -> getPortUuid(ifaceName, uuid) != null)
+                .findFirst();
+
+        String portUuidStr = getPortUuid(ifaceName, bridgeId.get());
+        if (portUuidStr == null) {
+            log.error("Unable to find interface with name " + ifaceName);
+            return false;
+        }
+
+        Row portRow = rowStorePort.getRow(portUuidStr);
+        Port port = (Port) TableGenerator.getTable(dbSchema, portRow, OvsdbTable.PORT);
+
+        port.setQos(setUuid);
+
+        ListenableFuture<List<OperationResult>> upcfg = updateConfig(PORT, UUID, portUuidStr, port.getRow());
+        if (upcfg == null) {
+            log.error("Unable to setPortQosUuid " + ifaceName + ": error during updateconfig");
+            return false;
+        }
+
+        try {
+            for (OperationResult ret : upcfg.get()) {
+                if (ret.getError() != null) {
+                    log.error("Unable to setPortQosUuid " + ifaceName +
+                                      ": error during updateconfig (" + ret.getError() +
+                                      " -> " + ret.getDetails() + ")");
+                    return false;
+                }
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            log.error("Unable to setPortQosUuid" + ifaceName +
+                              "InterruptException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        } catch (ExecutionException e) {
+            log.error("Unable to setPortQosUuid" + ifaceName +
+                              "ExecutionException :" + e.getMessage() +
+                              "StackTrace :" + e.getStackTrace());
+            return false;
+        }
+        log.info("Correctly updated qos of port " + ifaceName);
+        return true;
+    }
+
+    @Override
+    public boolean clearQosProfile(String ifaceName) {
+        Set<Uuid> ar = new HashSet<>();
+        return setPortQosUuid(ifaceName, ar);
+    }
+
+    @Override
+    public Set<OvsdbQueueProfile> getQueueProfiles() {
+        OvsdbRowStore rowStoreQueue = getRowStore(DATABASENAME, QUEUE);
+        if (rowStoreQueue == null) {
+            log.debug("Unable to get RowStore (getQueueProfiles)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> queueTableRows = rowStoreQueue.getRowStore();
+        if (queueTableRows == null) {
+            log.debug("Unable to get qosTableRows (getQueueProfiles)");
+            return null;
+        }
+
+        HashSet<OvsdbQueueProfile> retSet = new HashSet<>();
+        for (Row row : queueTableRows.values()) {
+            OvsdbQueueProfile profile = getQueueProfile(row.uuid());
+
+            if (profile != null) {
+                retSet.add(profile);
+            } else {
+                log.warn("Unable to get OvsdbQueueProfile with UUID = " + row.uuid());
+            }
+        }
+        return retSet;
+    }
+
+    @Override
+    public Set<OvsdbQueueProfile> getQueueProfiles(String qosProfileName) {
+
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+        OvsdbRowStore rowStoreQoS = getRowStore(DATABASENAME, QOS);
+        if (rowStoreQoS == null) {
+            log.debug("Unable to get RowStore (getQueueProfiles)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> qosTableRows = rowStoreQoS.getRowStore();
+        if (qosTableRows == null) {
+            log.debug("Unable to get qosTableRows (getQueueProfiles)");
+            return null;
+        }
+
+        for (String uuid : qosTableRows.keySet()) {
+            Qos qos = (Qos) TableGenerator
+                    .getTable(dbSchema, qosTableRows.get(uuid), OvsdbTable.QOS);
+            qos.getExternalIdsColumn();
+
+            OvsdbMap ovsdbMap = (OvsdbMap) qos.getExternalIdsColumn().data();
+            Map<String, String> externalIds = ovsdbMap.map();
+            if (externalIds.isEmpty()) {
+                log.warn("The external_ids is null");
+                return null;
+            }
+
+            String qosName = externalIds.get("qos-name");
+            if (qosName == null) {
+                log.warn("The qosName is null");
+                return null;
+            }
+            if (qosProfileName.equalsIgnoreCase(qosName)) {
+                OvsdbMap ovsdbmapQueue = (OvsdbMap) qos.getQueuesColumn().data();
+                Map<Long, Uuid> queueMaps = ovsdbmapQueue.map();
+
+                HashSet<OvsdbQueueProfile> retSet = new HashSet<>();
+                for (Uuid queueUuid : queueMaps.values()) {
+                    OvsdbQueueProfile profile = getQueueProfile(queueUuid);
+
+                    if (profile != null) {
+                        retSet.add(profile);
+                    } else {
+                        log.warn("Unable to get OvsdbQueueProfile with UUID = " + queueUuid);
+                    }
+                }
+                return retSet;
+            }
+        }
+        return null;
+    }
+
+    private OvsdbQueueProfile getQueueProfile(Uuid queueProfileUuid) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+
+        OvsdbRowStore rowStoreQueue = getRowStore(DATABASENAME, QUEUE);
+        if (rowStoreQueue == null) {
+            log.debug("Unable to get RowStore (getQueueProfiles)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> queueTableRows = rowStoreQueue.getRowStore();
+        if (queueTableRows == null) {
+            log.debug("Unable to get queueTableRows (getQueueProfiles)");
+            return null;
+        }
+
+        if (queueTableRows.get(queueProfileUuid.value()) == null) {
+            log.debug("Unable to find queue with UUID :" + queueProfileUuid.value());
+            return null;
+        }
+
+        Queue queue = (Queue) TableGenerator
+                .getTable(dbSchema, queueTableRows.get(queueProfileUuid.value()), OvsdbTable.QUEUE);
+
+        OvsdbMap queueExternalIds = (OvsdbMap) queue.getExternalIdsColumn().data();
+        OvsdbMap queueQtherConfigs = (OvsdbMap) queue.getOtherConfigColumn().data();
+        Map<String, String> qExternalIdsMap = queueExternalIds.map();
+        Map<String, String> qOtherConfigsMap = queueQtherConfigs.map();
+
+        String name = "";
+        QueueProfileDescription.Type type = QueueProfileDescription.Type.FULL;
+        Optional<Long> minRate = Optional.empty();
+        Optional<Long> maxRate = Optional.empty();
+        Optional<Long> burst = Optional.empty();
+        Optional<Long> priority = Optional.empty();
+
+        if (qExternalIdsMap.get("queue-name") != null) {
+            name = qExternalIdsMap.get("queue-name");
+        }
+        if (qOtherConfigsMap.get("min-rate") != null) {
+            minRate = Optional.of(new Long(qOtherConfigsMap.get("min-rate")));
+        }
+        if (qOtherConfigsMap.get("max-rate") != null) {
+            minRate = Optional.of(new Long(qOtherConfigsMap.get("max-rate")));
+        }
+        if (qOtherConfigsMap.get("burst") != null) {
+            minRate = Optional.of(new Long(qOtherConfigsMap.get("burst")));
+        }
+        if (qOtherConfigsMap.get("priority") != null) {
+            minRate = Optional.of(new Long(qOtherConfigsMap.get("priority")));
+        }
+
+        return OvsdbQueueProfile.builder(
+                new DefaultQueueProfileDescription(name, type, minRate, maxRate, burst, priority))
+                .build();
+    }
+
+    @Override
+    public OvsdbQosProfile getQosProfile(String ifaceName) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+
+        OvsdbRowStore rowStorePort = getRowStore(DATABASENAME, PORT);
+        if (rowStorePort == null) {
+            log.warn("Failed to get PORT table");
+            return null;
+        }
+
+        OvsdbRowStore rowStoreBridge = getRowStore(DATABASENAME, BRIDGE);
+        if (rowStoreBridge == null) {
+            log.warn("Failed to get BRIDGE table");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> bridgeTableRows = rowStoreBridge.getRowStore();
+        if (bridgeTableRows == null) {
+            log.warn("Failed to get BRIDGE table rows");
+            return null;
+        }
+        // interface name is unique
+        Optional<String> bridgeId = bridgeTableRows.keySet().stream()
+                .filter(uuid -> getPortUuid(ifaceName, uuid) != null)
+                .findFirst();
+
+        String portUuidStr = getPortUuid(ifaceName, bridgeId.get());
+        if (portUuidStr == null) {
+            log.error("Unable to find interface with name " + ifaceName);
+            return null;
+        }
+
+        Row portRow = rowStorePort.getRow(portUuidStr);
+        Port port = (Port) TableGenerator.getTable(dbSchema, portRow, OvsdbTable.PORT);
+
+        return getQosProfile((Uuid) port.getQosColumn().data());
+    }
+
+    @Override
+    public long getOfQueue(String qosProfileName, String queueProfileName) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+        OvsdbRowStore rowStoreQoS = getRowStore(DATABASENAME, QOS);
+        if (rowStoreQoS == null) {
+            log.debug("Unable to get RowStore (getOfQueue)");
+            return -1;
+        }
+
+        ConcurrentMap<String, Row> qosTableRows = rowStoreQoS.getRowStore();
+        if (qosTableRows == null) {
+            log.debug("Unable to get qosTableRows (getOfQueue)");
+            return -1;
+        }
+
+        for (String uuid : qosTableRows.keySet()) {
+            Qos qos = (Qos) TableGenerator
+                    .getTable(dbSchema, qosTableRows.get(uuid), OvsdbTable.QOS);
+            qos.getExternalIdsColumn();
+
+            OvsdbMap ovsdbMap = (OvsdbMap) qos.getExternalIdsColumn().data();
+            Map<String, String> externalIds = ovsdbMap.map();
+            if (externalIds.isEmpty()) {
+                log.warn("The external_ids is null");
+                return -1;
+            }
+
+            String qosName = externalIds.get("qos-name");
+            if (qosName == null) {
+                log.warn("The qosName is null");
+                return -1;
+            }
+            if (qosProfileName.equalsIgnoreCase(qosName)) {
+                //FIXME BUG? If .data() return an HashMap -> queues empty
+                if (qos.getQueuesColumn().data() instanceof HashMap) {
+                    continue;
+                }
+                OvsdbMap ovsdbmapQueue = (OvsdbMap) qos.getQueuesColumn().data();
+                Map<Long, Uuid> queueMaps = ovsdbmapQueue.map();
+
+                for (Map.Entry<Long, Uuid> queueEntry : queueMaps.entrySet()) {
+                    if (queueEntry.getValue() != null) {
+                        OvsdbQueueProfile profile = getQueueProfile(queueEntry.getValue());
+
+                        if (profile.name().equalsIgnoreCase(queueProfileName)) {
+                            //FIXME Integer or Long ?!?!?!
+                            Object o = queueEntry.getKey();
+                            Long ret;
+                            if (o instanceof Integer) {
+                                ret = new Long((Integer) o);
+                            } else if (o instanceof Long) {
+                                ret = (Long) o;
+                            } else {
+                                log.error("Wrong key class inside QoS queues : " + o.getClass().toString());
+                                return -1;
+                            }
+                            return ret;
+                        }
+                    }
+                }
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    private Uuid getQueueProfileUuid(String queueProfileName) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+        OvsdbRowStore rowStore = getRowStore(DATABASENAME, QUEUE);
+        if (rowStore == null) {
+            log.debug("Unable to get RowStore (getQueueProfileUuid)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> queueTableRows = rowStore.getRowStore();
+        if (queueTableRows == null) {
+            log.debug("Unable to get queueTableRows (getQueueProfileUuid)");
+            return null;
+        }
+
+        for (String uuid : queueTableRows.keySet()) {
+            Queue queue = (Queue) TableGenerator
+                    .getTable(dbSchema, queueTableRows.get(uuid), OvsdbTable.QUEUE);
+            queue.getExternalIdsColumn();
+
+            OvsdbMap ovsdbMap = (OvsdbMap) queue.getExternalIdsColumn().data();
+            Map<String, String> externalIds = ovsdbMap.map();
+            if (externalIds.isEmpty()) {
+                log.warn("The external_ids is null");
+                return null;
+            }
+
+            String queueName = externalIds.get("queue-name");
+            if (queueName == null) {
+                log.warn("The queueName is null");
+                return null;
+            }
+            if (queueProfileName.equalsIgnoreCase(queueName)) {
+                return queue.getRow().uuid();
+            }
+        }
+        return null;
+    }
+
+    private Uuid getQosProfileUuid(String qosProfileName) {
+        DatabaseSchema dbSchema = schema.get(DATABASENAME);
+        OvsdbRowStore rowStore = getRowStore(DATABASENAME, QOS);
+        if (rowStore == null) {
+            log.debug("Unable to get RowStore (getQosProfileUuid)");
+            return null;
+        }
+
+        ConcurrentMap<String, Row> qosTableRows = rowStore.getRowStore();
+        if (qosTableRows == null) {
+            log.debug("Unable to get qosTableRows (getQosProfileUuid)");
+            return null;
+        }
+
+        for (String uuid : qosTableRows.keySet()) {
+            Qos qos = (Qos) TableGenerator
+                    .getTable(dbSchema, qosTableRows.get(uuid), OvsdbTable.QOS);
+            qos.getExternalIdsColumn();
+
+            OvsdbMap ovsdbMap = (OvsdbMap) qos.getExternalIdsColumn().data();
+            Map<String, String> externalIds = ovsdbMap.map();
+            if (externalIds.isEmpty()) {
+                log.warn("The external_ids is null");
+                return null;
+            }
+            String qosName = externalIds.get("qos-name");
+            if (qosName == null) {
+                log.warn("The qosName is null");
+                return null;
+            }
+            if (qosProfileName.equalsIgnoreCase(qosName)) {
+                return qos.getRow().uuid();
+            }
+        }
+        return null;
     }
 }

@@ -54,6 +54,9 @@ public final class OvsdbConstant {
     public static final String INTERFACE = "Interface";
     // type
     public static final String TYPEVXLAN = "vxlan";
+
+    public static final String QOS = "QoS";
+    public static final String QUEUE = "Queue";
     // virtual machine identifiers
     public static final String EXTERNAL_ID_INTERFACE_ID = "iface-id";
     public static final String EXTERNAL_ID_VM_MAC = "attached-mac";
