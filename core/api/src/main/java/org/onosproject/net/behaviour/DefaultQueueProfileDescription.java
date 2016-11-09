@@ -3,9 +3,6 @@ package org.onosproject.net.behaviour;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Created by Emanuele Fia on 27/10/16.
- */
 public class DefaultQueueProfileDescription implements QueueProfileDescription {
 
     private final String name;

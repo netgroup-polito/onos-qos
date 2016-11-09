@@ -232,7 +232,7 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
     }
 
     @Override
-    public boolean removeQosProfile(String qosProfileName) {
+    public boolean dropQosProfile(String qosProfileName) {
         return true;
     }
 
@@ -247,7 +247,7 @@ public class OvsdbClientServiceAdapter implements OvsdbClientService {
     }
 
     @Override
-    public boolean removeQueueProfile(String queueName) {
+    public boolean dropQueueProfile(String queueName) {
         return true;
     }
 

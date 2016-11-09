@@ -68,7 +68,9 @@ public final class Update implements Operation {
         Collection<Column> columns = row.getColumns();
         for (Column column : columns) {
             //Immutable Bug
-            if (row.tableName() == "Port" && column.columnName() == "name") continue;
+            if (row.tableName() == "Port" && column.columnName() == "name") {
+                continue;
+            }
 
             String columnName = column.columnName();
             Object value = column.data();

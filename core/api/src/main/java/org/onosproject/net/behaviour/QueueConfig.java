@@ -36,7 +36,7 @@ public interface QueueConfig extends HandlerBehaviour {
     boolean removeQueueProfile(String queueName);
 
     List<QueueProfileDescription> getQueueProfile();
-    List<QueueProfileDescription> getQueueProfile(QosProfileDescription qosProfileDesc);
+    List<QueueProfileDescription> getQueueProfile(String qosProfileName);
 
     boolean setQosProfile(String ifaceName, String qosProfileName);
 

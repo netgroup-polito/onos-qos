@@ -31,9 +31,6 @@ import static com.google.common.base.Preconditions.checkState;
 import static org.onlab.util.Tools.delay;
 import static org.slf4j.LoggerFactory.getLogger;
 
-/**
- * Created by name29 on 27/10/16.
- */
 public class OvsdbQueueConfig extends AbstractHandlerBehaviour implements QueueConfig {
     private final Logger log = getLogger(getClass());
 
@@ -48,7 +45,7 @@ public class OvsdbQueueConfig extends AbstractHandlerBehaviour implements QueueC
     @Override
     public boolean removeQosProfile(String qosProfilename) {
         OvsdbClientService ovsdbClient = getOvsdbClient(handler());
-        return ovsdbClient.removeQosProfile(qosProfilename);
+        return ovsdbClient.dropQosProfile(qosProfilename);
     }
 
     @Override
@@ -58,10 +55,13 @@ public class OvsdbQueueConfig extends AbstractHandlerBehaviour implements QueueC
         DriverHandler handler = handler();
         OvsdbClientService client = getOvsdbClient(handler);
         Set<OvsdbQosProfile> ovsdbSet = client.getQosProfiles();
-        ovsdbSet.forEach(o -> {
-            qosProfilesDescr.add(new DefaultQosProfileDescription(o.name(), o.type(), o.minRate(), o.maxRate()));
-        });
-        return qosProfilesDescr;
+        if (ovsdbSet != null) {
+            ovsdbSet.forEach(o -> {
+                qosProfilesDescr.add(new DefaultQosProfileDescription(o.name(), o.type(), o.minRate(), o.maxRate()));
+            });
+            return qosProfilesDescr;
+        }
+        return null;
     }
 
     @Override
@@ -75,7 +75,7 @@ public class OvsdbQueueConfig extends AbstractHandlerBehaviour implements QueueC
     @Override
     public boolean removeQueueProfile(String queueProfileName) {
         OvsdbClientService ovsdbClient = getOvsdbClient(handler());
-        return ovsdbClient.removeQueueProfile(queueProfileName);
+        return ovsdbClient.dropQueueProfile(queueProfileName);
     }
 
     @Override
@@ -84,18 +84,21 @@ public class OvsdbQueueConfig extends AbstractHandlerBehaviour implements QueueC
     }
 
     @Override
-    public List<QueueProfileDescription> getQueueProfile(QosProfileDescription queueProfileDesc) {
+    public List<QueueProfileDescription> getQueueProfile(String queueProfileName) {
         List<QueueProfileDescription> queueProfilesDescr = new ArrayList<>();
 
         DriverHandler handler = handler();
         OvsdbClientService client = getOvsdbClient(handler);
-        Set<OvsdbQueueProfile> ovsdbSet = (queueProfileDesc == null) ?
-                client.getQueueProfiles() : client.getQueueProfiles(queueProfileDesc.name());
-        ovsdbSet.forEach(o -> {
-            queueProfilesDescr.add(new DefaultQueueProfileDescription(o.name(), o.type(), o.minRate(), o.maxRate(),
-                                                                      o.burst(), o.priority()));
-        });
-        return queueProfilesDescr;
+        Set<OvsdbQueueProfile> ovsdbSet = (queueProfileName == null) ?
+                client.getQueueProfiles() : client.getQueueProfiles(queueProfileName);
+        if (ovsdbSet != null) {
+            ovsdbSet.forEach(o -> {
+                queueProfilesDescr.add(new DefaultQueueProfileDescription(o.name(), o.type(), o.minRate(), o.maxRate(),
+                                                                          o.burst(), o.priority()));
+            });
+            return queueProfilesDescr;
+        }
+        return null;
     }
 
     @Override
@@ -122,39 +125,13 @@ public class OvsdbQueueConfig extends AbstractHandlerBehaviour implements QueueC
 
     private OvsdbClientService getOvsdbClient(DriverHandler handler) {
         OvsdbController ovsController = handler.get(OvsdbController.class);
-        DeviceService deviceService = handler.get(DeviceService.class);
-        DeviceId ofDeviceId = handler.data().deviceId();
-        String[] mgmtAddress = deviceService.getDevice(ofDeviceId)
-                .annotations().value(AnnotationKeys.MANAGEMENT_ADDRESS).split(":");
-        String targetIp = mgmtAddress[0];
-        TpPort targetPort = null;
-        if (mgmtAddress.length > 1) {
-            targetPort = TpPort.tpPort(Integer.parseInt(mgmtAddress[1]));
+        DeviceId deviceId = handler.data().deviceId();
+        String[] splits = deviceId.toString().split(":");
+        if (splits == null || splits.length < 1) {
+            return null;
         }
-
-        List<OvsdbNodeId> nodeIds = ovsController.getNodeIds().stream()
-                .filter(nodeId -> nodeId.getIpAddress().equals(targetIp))
-                .collect(Collectors.toList());
-        if (nodeIds.size() == 0) {
-            //TODO decide what port?
-            ovsController.connect(IpAddress.valueOf(targetIp),
-                                  targetPort == null ? TpPort.tpPort(OvsdbConstant.OVSDBPORT) : targetPort);
-            delay(1000); //FIXME... connect is async
-        }
-        List<OvsdbClientService> clientServices = ovsController.getNodeIds().stream()
-                .filter(nodeId -> nodeId.getIpAddress().equals(targetIp))
-                .map(ovsController::getOvsdbClient)
-                .filter(cs -> cs.getBridges().stream().anyMatch(b -> dpidMatches(b, ofDeviceId)))
-                .collect(Collectors.toList());
-        checkState(clientServices.size() > 0, "No clientServices found");
-        //FIXME add connection to management address if null --> done ?
-        return clientServices.size() > 0 ? clientServices.get(0) : null;
-    }
-    private static boolean dpidMatches(OvsdbBridge bridge, DeviceId deviceId) {
-        checkArgument(bridge.datapathId().isPresent());
-
-        String bridgeDpid = "of:" + bridge.datapathId().get();
-        String ofDpid = deviceId.toString();
-        return bridgeDpid.equals(ofDpid);
+        IpAddress ipAddress = IpAddress.valueOf(splits[1]);
+        OvsdbNodeId nodeId =  new OvsdbNodeId(ipAddress, 0);
+        return ovsController.getOvsdbClient(nodeId);
     }
 }

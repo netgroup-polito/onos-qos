@@ -2,7 +2,6 @@ package org.onosproject.net.behaviour;
 
 import java.util.Optional;
 
-
 /*
 *The description of an Queue Profile used for legacy devices.
 */

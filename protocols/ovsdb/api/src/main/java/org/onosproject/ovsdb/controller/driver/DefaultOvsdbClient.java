@@ -1494,7 +1494,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
     }
 
     @Override
-    public boolean removeQosProfile(String qosProfileName) {
+    public boolean dropQosProfile(String qosProfileName) {
         //TODO
         return false;
     }
@@ -1503,13 +1503,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
     public Set<OvsdbQosProfile> getQosProfiles() {
         OvsdbRowStore rowStoreQos = getRowStore(DATABASENAME, QOS);
         if (rowStoreQos == null) {
-            log.debug("Unable to get RowStore (getQosProfiles)");
+            log.warn("Unable to get RowStore (getQosProfiles)");
             return null;
         }
 
         ConcurrentMap<String, Row> qosTableRows = rowStoreQos.getRowStore();
         if (qosTableRows == null) {
-            log.debug("Unable to get qosTableRows (getQosProfiles)");
+            log.warn("Unable to get qosTableRows (getQosProfiles)");
             return null;
         }
 
@@ -1531,18 +1531,24 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
 
         OvsdbRowStore rowStoreQos = getRowStore(DATABASENAME, QOS);
         if (rowStoreQos == null) {
-            log.debug("Unable to get RowStore (getQosProfile)");
+            log.warn("Unable to get RowStore (getQosProfile)");
             return null;
         }
 
         ConcurrentMap<String, Row> qosTableRows = rowStoreQos.getRowStore();
         if (qosTableRows == null) {
-            log.debug("Unable to get qosTableRows (getQosProfile)");
+            log.warn("Unable to get qosTableRows (getQosProfile)");
+            return null;
+        }
+
+        Row rowQosProfile = qosTableRows.get(qosProfileUuid.value());
+        if (rowQosProfile == null){
+            log.warn("Unable to get qosrow (getQosProfile)");
             return null;
         }
 
         Qos qos = (Qos) TableGenerator
-                .getTable(dbSchema, qosTableRows.get(qosProfileUuid), OvsdbTable.QOS);
+                .getTable(dbSchema, rowQosProfile, OvsdbTable.QOS);
 
         OvsdbMap qosExternalIds = (OvsdbMap) qos.getExternalIdsColumn().data();
         OvsdbMap qosQtherConfigs = (OvsdbMap) qos.getOtherConfigColumn().data();
@@ -1554,11 +1560,17 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
         Optional<Long> minRate = Optional.empty();
         Optional<Long> maxRate = Optional.empty();
 
-        if (qExternalIdsMap.get("queue-name") != null) {
-            name = qExternalIdsMap.get("queue-name");
+        if (qExternalIdsMap.get("qos-name") != null) {
+            name = qExternalIdsMap.get("qos-name");
         }
 
-        type = QosProfileDescription.Type.valueOf((String) qos.getTypeColumn().data());
+        String ty = ((String) qos.getTypeColumn().data()).toUpperCase();
+        if ( ty.equals("LINUX-HTB") ){
+            type = QosProfileDescription.Type.LINUX_HTB;
+        } else {
+            log.error("Invalid QOS TYPE: " + ty);
+            return null;
+        }
 
         if (qOtherConfigsMap.get("min-rate") != null) {
             minRate = Optional.of(new Long(qOtherConfigsMap.get("min-rate")));
@@ -1657,7 +1669,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
 
         OvsdbRowStore rowStore = getRowStore(DATABASENAME, QOS);
         if (rowStore == null) {
-            log.debug("There is no QoS table");
+            log.error("There is no QoS table");
             return false;
         }
 
@@ -1676,7 +1688,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
             queuesRet.put(0L, queueProfileUuid);
         } else {
             Long keyMax = 0L;
-            //FIXME Integer or Long ?!?!?!
+            //FIXME bug Integer or Long ?!?!?!
             for (Object o : queuesRet.keySet()) {
                 Long key;
                 if (o instanceof Integer) {
@@ -1730,7 +1742,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
     }
 
     @Override
-    public boolean removeQueueProfile(String queueName) {
+    public boolean dropQueueProfile(String queueName) {
         //TODO
         return false;
     }
@@ -1826,13 +1838,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
     public Set<OvsdbQueueProfile> getQueueProfiles() {
         OvsdbRowStore rowStoreQueue = getRowStore(DATABASENAME, QUEUE);
         if (rowStoreQueue == null) {
-            log.debug("Unable to get RowStore (getQueueProfiles)");
+            log.warn("Unable to get RowStore (getQueueProfiles)");
             return null;
         }
 
         ConcurrentMap<String, Row> queueTableRows = rowStoreQueue.getRowStore();
         if (queueTableRows == null) {
-            log.debug("Unable to get qosTableRows (getQueueProfiles)");
+            log.warn("Unable to get qosTableRows (getQueueProfiles)");
             return null;
         }
 
@@ -1855,13 +1867,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
         DatabaseSchema dbSchema = schema.get(DATABASENAME);
         OvsdbRowStore rowStoreQoS = getRowStore(DATABASENAME, QOS);
         if (rowStoreQoS == null) {
-            log.debug("Unable to get RowStore (getQueueProfiles)");
+            log.warn("Unable to get RowStore (getQueueProfiles)");
             return null;
         }
 
         ConcurrentMap<String, Row> qosTableRows = rowStoreQoS.getRowStore();
         if (qosTableRows == null) {
-            log.debug("Unable to get qosTableRows (getQueueProfiles)");
+            log.warn("Unable to get qosTableRows (getQueueProfiles)");
             return null;
         }
 
@@ -1874,13 +1886,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
             Map<String, String> externalIds = ovsdbMap.map();
             if (externalIds.isEmpty()) {
                 log.warn("The external_ids is null");
-                return null;
+                continue;
             }
 
             String qosName = externalIds.get("qos-name");
             if (qosName == null) {
                 log.warn("The qosName is null");
-                return null;
+                continue;
             }
             if (qosProfileName.equalsIgnoreCase(qosName)) {
                 OvsdbMap ovsdbmapQueue = (OvsdbMap) qos.getQueuesColumn().data();
@@ -1907,18 +1919,18 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
 
         OvsdbRowStore rowStoreQueue = getRowStore(DATABASENAME, QUEUE);
         if (rowStoreQueue == null) {
-            log.debug("Unable to get RowStore (getQueueProfiles)");
+            log.warn("Unable to get RowStore (getQueueProfiles)");
             return null;
         }
 
         ConcurrentMap<String, Row> queueTableRows = rowStoreQueue.getRowStore();
         if (queueTableRows == null) {
-            log.debug("Unable to get queueTableRows (getQueueProfiles)");
+            log.warn("Unable to get queueTableRows (getQueueProfiles)");
             return null;
         }
 
         if (queueTableRows.get(queueProfileUuid.value()) == null) {
-            log.debug("Unable to find queue with UUID :" + queueProfileUuid.value());
+            log.warn("Unable to find queue with UUID :" + queueProfileUuid.value());
             return null;
         }
 
@@ -2001,13 +2013,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
         DatabaseSchema dbSchema = schema.get(DATABASENAME);
         OvsdbRowStore rowStoreQoS = getRowStore(DATABASENAME, QOS);
         if (rowStoreQoS == null) {
-            log.debug("Unable to get RowStore (getOfQueue)");
+            log.warn("Unable to get RowStore (getOfQueue)");
             return -1;
         }
 
         ConcurrentMap<String, Row> qosTableRows = rowStoreQoS.getRowStore();
         if (qosTableRows == null) {
-            log.debug("Unable to get qosTableRows (getOfQueue)");
+            log.warn("Unable to get qosTableRows (getOfQueue)");
             return -1;
         }
 
@@ -2020,16 +2032,16 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
             Map<String, String> externalIds = ovsdbMap.map();
             if (externalIds.isEmpty()) {
                 log.warn("The external_ids is null");
-                return -1;
+                continue;
             }
 
             String qosName = externalIds.get("qos-name");
             if (qosName == null) {
                 log.warn("The qosName is null");
-                return -1;
+                continue;
             }
             if (qosProfileName.equalsIgnoreCase(qosName)) {
-                //FIXME BUG? If .data() return an HashMap -> queues empty
+                //FIXME BUG? If .data() return an HashMap -> queues is empty
                 if (qos.getQueuesColumn().data() instanceof HashMap) {
                     continue;
                 }
@@ -2041,7 +2053,7 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
                         OvsdbQueueProfile profile = getQueueProfile(queueEntry.getValue());
 
                         if (profile.name().equalsIgnoreCase(queueProfileName)) {
-                            //FIXME Integer or Long ?!?!?!
+                            //FIXME BUG? Integer or Long ?!?!?!
                             Object o = queueEntry.getKey();
                             Long ret;
                             if (o instanceof Integer) {
@@ -2049,8 +2061,8 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
                             } else if (o instanceof Long) {
                                 ret = (Long) o;
                             } else {
-                                log.error("Wrong key class inside QoS queues : " + o.getClass().toString());
-                                return -1;
+                                log.warn("Wrong key class inside QoS queues : " + o.getClass().toString());
+                                continue;
                             }
                             return ret;
                         }
@@ -2066,13 +2078,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
         DatabaseSchema dbSchema = schema.get(DATABASENAME);
         OvsdbRowStore rowStore = getRowStore(DATABASENAME, QUEUE);
         if (rowStore == null) {
-            log.debug("Unable to get RowStore (getQueueProfileUuid)");
+            log.warn("Unable to get RowStore (getQueueProfileUuid)");
             return null;
         }
 
         ConcurrentMap<String, Row> queueTableRows = rowStore.getRowStore();
         if (queueTableRows == null) {
-            log.debug("Unable to get queueTableRows (getQueueProfileUuid)");
+            log.warn("Unable to get queueTableRows (getQueueProfileUuid)");
             return null;
         }
 
@@ -2085,13 +2097,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
             Map<String, String> externalIds = ovsdbMap.map();
             if (externalIds.isEmpty()) {
                 log.warn("The external_ids is null");
-                return null;
+                continue;
             }
 
             String queueName = externalIds.get("queue-name");
             if (queueName == null) {
                 log.warn("The queueName is null");
-                return null;
+                continue;
             }
             if (queueProfileName.equalsIgnoreCase(queueName)) {
                 return queue.getRow().uuid();
@@ -2104,13 +2116,13 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
         DatabaseSchema dbSchema = schema.get(DATABASENAME);
         OvsdbRowStore rowStore = getRowStore(DATABASENAME, QOS);
         if (rowStore == null) {
-            log.debug("Unable to get RowStore (getQosProfileUuid)");
+            log.warn("Unable to get RowStore (getQosProfileUuid)");
             return null;
         }
 
         ConcurrentMap<String, Row> qosTableRows = rowStore.getRowStore();
         if (qosTableRows == null) {
-            log.debug("Unable to get qosTableRows (getQosProfileUuid)");
+            log.warn("Unable to get qosTableRows (getQosProfileUuid)");
             return null;
         }
 
@@ -2123,12 +2135,12 @@ public class DefaultOvsdbClient implements OvsdbProviderService, OvsdbClientServ
             Map<String, String> externalIds = ovsdbMap.map();
             if (externalIds.isEmpty()) {
                 log.warn("The external_ids is null");
-                return null;
+                continue;
             }
             String qosName = externalIds.get("qos-name");
             if (qosName == null) {
                 log.warn("The qosName is null");
-                return null;
+                continue;
             }
             if (qosProfileName.equalsIgnoreCase(qosName)) {
                 return qos.getRow().uuid();

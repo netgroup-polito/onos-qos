@@ -3,9 +3,6 @@ package org.onosproject.net.behaviour;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Created by name29 on 27/10/16.
- */
 public class DefaultQosProfileDescription implements QosProfileDescription {
 
     private final String name;

@@ -7,9 +7,6 @@ import java.util.Optional;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 
-/**
- * Created by name29 on 27/10/16.
- */
 public final class OvsdbQueueProfile {
     private final String name;
     private final QueueProfileDescription.Type type;

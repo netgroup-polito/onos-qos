@@ -314,25 +314,81 @@ public interface OvsdbClientService extends OvsdbRpc {
      */
     void disconnect();
 
-    //TODO
+    /**
+     * Create a QoS profile
+     * @param ovsdbQosProfile ovsdbQosProfile description
+     * @return true if QoS profile creation is successful, otherwise false
+     */
     boolean createQosProfile(OvsdbQosProfile ovsdbQosProfile);
 
-    boolean removeQosProfile(String qosProfileName);
+    /**
+     * Drops a QoS profile
+     * @param qosProfileName qos profile name
+     * @return true if qos profile drops is successful, otherwise false
+     */
+    boolean dropQosProfile(String qosProfileName);
 
+    /**
+     * Get OVSDB QoS Profiles
+     * @return OVSDB Qos Profiles
+     */
     Set<OvsdbQosProfile> getQosProfiles();
 
-    boolean createQueueProfile(String qosProfileName, OvsdbQueueProfile ovsdbQosProfile);
+    /**
+     * Create a Queue profile
+     * @param qosProfileName qos profile name
+     * @param ovsdbQueueProfile ovsdbQueueProfile description
+     * @return true if Queue profile creation is successful, otherwise false
+     */
+    boolean createQueueProfile(String qosProfileName, OvsdbQueueProfile ovsdbQueueProfile);
 
-    boolean removeQueueProfile(String queueName);
+    /**
+     * Drops a Queue Profile
+     * @param queueName queue profile name
+     * @return true if queue profile drops is successful, otherwise false
+     */
+    boolean dropQueueProfile(String queueName);
 
+    /**
+     * Apply the specified qos profile to interface
+     * @param ifaceName name of interface
+     * @param qosProfileName name of qos profile
+     * @return ture if Qos profile is successful associated with interface, otherwise false
+     */
     boolean setQueueProfile(String ifaceName, String qosProfileName);
 
+    /**
+     * Remove the Qos profile from the specified interface
+     * @param ifaceName name of interface
+     * @return ture if Qos profile is successful removed from interface, otherwise false
+     */
     boolean clearQosProfile(String ifaceName);
 
+    /**
+     * Get ovsdb queue profiles
+     * @return ovsdb queue profiles
+     */
     Set<OvsdbQueueProfile> getQueueProfiles();
+
+    /**
+     * Get ovsdb queue profiles of specified qos profile name
+     * @param qosProfileName name of qos profile
+     * @return
+     */
     Set<OvsdbQueueProfile> getQueueProfiles(String qosProfileName);
 
+    /**
+     * Get ovsdb qos profile associated with the specified interface
+     * @param ifaceName interface name
+     * @return ovsdbqosprofile or null if no qos profile associated with the specified interface
+     */
     OvsdbQosProfile getQosProfile(String ifaceName);
 
+    /**
+     * Return the OpenFlow ID of the specified Qos profile and Queue profile
+     * @param qosProfileName name of qos profile
+     * @param queueProfileName name of queue name
+     * @return the OpenFlow Queue ID or -1 in case of error
+     */
     long getOfQueue(String qosProfileName, String queueProfileName);
 }
